@@ -14,6 +14,17 @@ using System.Windows.Forms;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json;
 
+/*
+   _____                  _    _          _____      _   
+  / ____|                | |  | |        / ____|    | |  
+ | (___  _ __   __ _ _ __| | _| |_   _  | |     __ _| |_ 
+  \___ \| '_ \ / _` | '__| |/ / | | | | | |    / _` | __|
+  ____) | |_) | (_| | |  |   <| | |_| | | |___| (_| | |_ 
+ |_____/| .__/ \__,_|_|  |_|\_\_|\__, |  \_____\__,_|\__|
+        | |                       __/ |                  
+        |_|                      |___/                   
+*/
+
 namespace cbGUI_CSharp
 {
     public partial class Form1 : Form
@@ -25,9 +36,16 @@ namespace cbGUI_CSharp
         string g_sAssetType; // String can contain Pants, Shirts or T-Shirts
         int g_iItemCount; // Amount of assets downloaded
 
+        //Delegates (required for cross-thread operation)
+
+        public delegate void AddToListDelegate(String txt);
+        public delegate void ClearListDelegate();
+
+
         public Form1()
         {
             InitializeComponent();
+            CreateNecessaryDirectoriesIfNeeded();
         }
 
         private void listBox1_SelectedIndexChanged(object sender, EventArgs e)
@@ -49,16 +67,34 @@ namespace cbGUI_CSharp
                 return;
             }
 
-            listBox1.Items.Clear();
-            listBox1.Items.Add("BOT | Download starting.");
-            DisableAllButtons();
+            if (!backgroundWorker1.IsBusy)
+            {
+                listBox1.Items.Clear();
+                listBox1.Items.Add("BOT | Download starting.");
+                DisableAllButtons();
 
+                backgroundWorker1.RunWorkerAsync();
+            }
+        }
+
+        private void AddToList(String txt)
+        {
+            listBox1.Items.Add(txt);
+        }
+
+        private void ClearList()
+        {
+            listBox1.Items.Clear();
+        }
+
+        private void backgroundWorker1_DoWork(object sender, DoWorkEventArgs e)
+        {
             //HTTP stuff
             for (int i = g_iStartPage; i <= g_iStopPage;)
             {
-                listBox1.Items.Clear();
+                this.BeginInvoke(new ClearListDelegate(ClearList));
                 String msgString = "BOT | Downloading assets from catalog page " + i;
-                listBox1.Items.Add(msgString);
+                this.BeginInvoke(new AddToListDelegate(AddToList), msgString);
                 ++i;
                 HttpClient client = new HttpClient();
                 try
@@ -86,7 +122,7 @@ namespace cbGUI_CSharp
                             if (pTo - pFrom < 0)
                             {
                                 String errString = "BOT | FAILURE - Item " + g_iItemCount + " - " + item.AssetId + " - " + item.Name;
-                                listBox1.Items.Add(errString);
+                                this.Invoke(new AddToListDelegate(AddToList), errString);
                             }
                             else
                             {
@@ -104,46 +140,54 @@ namespace cbGUI_CSharp
                                     client2.DownloadFile(result, filepath);
 
                                     String success = "BOT | SUCCESS - Item " + g_iItemCount + " - " + item.AssetId + " - " + item.Name;
-                                    listBox1.Items.Add(success);
+                                    this.Invoke(new AddToListDelegate(AddToList), success);
                                 }
                                 catch (HttpRequestException)
                                 {
                                     String errString = "BOT | FAILURE - " + g_iItemCount + " - " + item.AssetId + " - " + item.Name;
-                                    listBox1.Items.Add(errString);
+                                    this.Invoke(new AddToListDelegate(AddToList), errString);
                                 }
                             }
                         }
                         catch (HttpRequestException exception)
                         {
-                            listBox1.Items.Add("BOT | Failed to download (stage 2).");
+                            this.Invoke(new AddToListDelegate(AddToList), "BOT | Failed to download (stage 2).");
                             String errString = "BOT ERROR: " + exception.Message;
-                            listBox1.Items.Add(errString);
-                            client.Dispose();
+                            this.Invoke(new AddToListDelegate(AddToList), errString);
                             return;
                         }
                     }
                 }
                 catch (HttpRequestException exception)
                 {
-                    listBox1.Items.Add("BOT | Failed to download (stage 1).");
+                    this.Invoke(new AddToListDelegate(AddToList), "BOT | Failed to download (stage 1).");
                     String errString = "BOT ERROR: " + exception.Message;
-                    listBox1.Items.Add(errString);
+                    this.Invoke(new AddToListDelegate(AddToList), errString);
                     client.Dispose();
                     return;
                 }
                 client.Dispose();
-                EnableAllButtons();
-                g_iItemCount = 0;
+               
             }
+        }
+
+        private void backgroundWorker1_RunWorkerComplete(object sender, RunWorkerCompletedEventArgs e)
+        {
+            this.Invoke(new ClearListDelegate(ClearList));
+            this.Invoke(new AddToListDelegate(AddToList),  "BOT | Successfully downloaded " + g_iItemCount + " assets.");
+            EnableAllButtons();
+            g_iItemCount = 0;
         }
 
         private void DisableAllButtons()
         {
             button1.Enabled = false;
+            button2.Enabled = false;
         }
         private void EnableAllButtons()
         {
             button1.Enabled = true;
+            button2.Enabled = true;
         }
 
         private void checkBox1_CheckedChanged(object sender, EventArgs e) //Shirts
@@ -225,6 +269,18 @@ namespace cbGUI_CSharp
         }
 
         // Stocks by me
+
+        private void CreateNecessaryDirectoriesIfNeeded()
+        {
+            String check = Environment.CurrentDirectory + "\\Files";
+            if(!Directory.Exists(check))
+            {
+                Directory.CreateDirectory(check);
+                Directory.CreateDirectory(check + "\\Shirts");
+                Directory.CreateDirectory(check + "\\T-Shirts");
+                Directory.CreateDirectory(check + "\\Pants");
+            }
+        }
 
         // Stocks by other people
 
